@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V1.9 (狀態標示精簡版)</title>
+    <title>日光手感 ERP - V2.0 (三色燈號 + 附件格式報表)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.9</span></h1>
-                <p class="text-sm text-slate-500 mt-1">🔴 需補 / 🟢 充足 精簡標示 + 紅燈優先排序</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.0</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 紅燈/🟢 綠燈/🟠 橘燈(QDM≤5) + 附件對齊採購報表格式</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
@@ -66,7 +66,7 @@
             <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入</h2>
             <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition cursor-pointer">
                 <p class="text-slate-600 font-medium">拖拽 QDM 報表 (product_purchased_export.xlsx) 至此處</p>
-                <p class="text-xs text-slate-400 mt-1">🔴 需補商品優先排前，各商品預設不展開，可手動點擊展開細項</p>
+                <p class="text-xs text-slate-400 mt-1">🔴 紅燈/🟠 橘燈(QDM≤5) 商品優先排前，預設全收合，點擊可展開細項</p>
                 <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
             </div>
         </section>
@@ -76,7 +76,7 @@
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <div>
                     <h2 class="text-lg font-bold text-slate-800">📋 商品採購清單 (點擊 ▶ 可展開看顏色/尺寸細項)</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">預設依🔴 需補優先，再依字母順序排序</p>
+                    <p class="text-xs text-slate-500 mt-0.5">預設依紅燈/橘燈優先，再依字母順序排序</p>
                 </div>
                 <button onclick="exportPurchaseReport()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm shadow-sm transition flex items-center gap-1">
                     📥 匯出每日採購報表 (Excel)
@@ -138,9 +138,24 @@
             }
         }
 
-        // 只要實際採購量或建議採購量 > 0，或是真實庫存 < 0，皆視為需要補貨 (🔴 需補)
-        function isNeedBuy(g) {
-            return g.totalBuyQty > 0 || g.totalSuggestQty > 0 || g.totalRealStock < 0;
+        // 判斷單一變體狀態：'orange' | 'red' | 'green'
+        function getVariantStatus(v) {
+            if (v.qdmStock <= 5) return 'orange';
+            const sug = calculateSuggest(v.realStock, v.sales);
+            const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+            if (actual > 0 || sug > 0 || v.realStock < 0) return 'red';
+            return 'green';
+        }
+
+        // 判斷主商品狀態
+        function getGroupStatus(g) {
+            const hasOrange = g.variants.some(v => getVariantStatus(v) === 'orange');
+            if (hasOrange) return 'orange';
+
+            const hasRed = g.variants.some(v => getVariantStatus(v) === 'red') || g.totalBuyQty > 0 || g.totalSuggestQty > 0 || g.totalRealStock < 0;
+            if (hasRed) return 'red';
+
+            return 'green';
         }
 
         function toggleExpand(code) {
@@ -162,16 +177,19 @@
                 return;
             }
 
-            // 排序：1. ALL置頂  2. 🔴 需補優先  3. 依字母順序
+            // 排序：1. ALL置頂  2. 紅/橘燈優先  3. 依字母順序
             let sortedGroups = [...productsGrouped].sort((a, b) => {
                 if (a.code === 'ALL') return -1;
                 if (b.code === 'ALL') return 1;
 
-                const aRed = isNeedBuy(a);
-                const bRed = isNeedBuy(b);
+                const statusA = getGroupStatus(a);
+                const statusB = getGroupStatus(b);
 
-                if (aRed && !bRed) return -1;
-                if (!aRed && bRed) return 1;
+                const isAlertA = statusA === 'red' || statusA === 'orange';
+                const isAlertB = statusB === 'red' || statusB === 'orange';
+
+                if (isAlertA && !isAlertB) return -1;
+                if (!isAlertA && isAlertB) return 1;
 
                 return a.code.localeCompare(b.code, 'en', { numeric: true });
             });
@@ -190,7 +208,8 @@
             sortedGroups.forEach(g => {
                 if (g.code !== 'ALL') {
                     totalStock += g.totalRealStock;
-                    if (isNeedBuy(g)) {
+                    const st = getGroupStatus(g);
+                    if (st === 'red' || st === 'orange' || g.totalBuyQty > 0) {
                         needBuyItemsCount++;
                         needBuyQtyCount += g.totalBuyQty;
                     }
@@ -225,12 +244,15 @@
                        </button>`
                     : '';
 
-                // 修改點：精簡狀態顯示為 🔴 需補 與 🟢 充足
+                // 三色燈號渲染
+                const gStatus = getGroupStatus(group);
                 let statusBadge = '';
-                if (isNeedBuy(group)) {
-                    statusBadge = '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 🔴 需補</span>';
+                if (gStatus === 'orange') {
+                    statusBadge = '<span class="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-amber-500"></span> 🟠 橘燈 (QDM≤5)</span>';
+                } else if (gStatus === 'red') {
+                    statusBadge = '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 🔴 紅燈</span>';
                 } else {
-                    statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-xs font-medium flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 🟢 充足</span>';
+                    statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-xs font-medium flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 🟢 綠燈</span>';
                 }
 
                 tr.innerHTML = `
@@ -263,11 +285,14 @@
                         const sug = calculateSuggest(v.realStock, v.sales);
                         const displayBuy = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
 
+                        const vSt = getVariantStatus(v);
                         let childStatus = '';
-                        if (displayBuy > 0 || sug > 0 || v.realStock < 0) {
-                            childStatus = `<span class="text-rose-600 font-bold">🔴 需補</span>`;
+                        if (vSt === 'orange') {
+                            childStatus = `<span class="text-amber-600 font-bold">🟠 橘燈</span>`;
+                        } else if (vSt === 'red') {
+                            childStatus = `<span class="text-rose-600 font-bold">🔴 紅燈</span>`;
                         } else {
-                            childStatus = `<span class="text-emerald-600 font-medium">🟢 充足</span>`;
+                            childStatus = `<span class="text-emerald-600 font-medium">🟢 綠燈</span>`;
                         }
 
                         childTr.innerHTML = `
@@ -452,28 +477,48 @@
             reader.readAsArrayBuffer(file);
         }
 
+        // 修改點：完全對齊附件報表欄位格式與主/子列層級結構
         function exportPurchaseReport() {
             const purchaseRows = [];
             
             productsGrouped.forEach(g => {
                 if (g.code === 'ALL') return;
-                g.variants.forEach(v => {
+
+                // 篩選有採購需求的子規格
+                const needVariants = g.variants.filter(v => {
                     const sug = calculateSuggest(v.realStock, v.sales);
                     const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
-                    if (actual > 0) {
-                        purchaseRows.push({
-                            '商品代碼': g.code,
-                            '完整商品名稱': g.fullName,
-                            '規格(顏色/尺寸)': v.spec,
-                            'SKU': v.sku,
-                            'QDM庫存': v.qdmStock,
-                            '真實庫存': v.realStock,
-                            '前日銷量': v.sales,
-                            '建議採購量': sug,
-                            '實際採購下單量': actual
-                        });
-                    }
+                    return actual > 0 || sug > 0;
                 });
+
+                if (needVariants.length > 0) {
+                    // 1. 寫入主商品標題列 (僅商品名稱有值)
+                    purchaseRows.push({
+                        '商品名稱': g.fullName,
+                        '尺寸/款式/顏色': '',
+                        'QDM庫存': '',
+                        '實際庫存': '',
+                        '前日銷量': '',
+                        '實際採購量': '',
+                        '建議採購量': ''
+                    });
+
+                    // 2. 寫入各個子規格細項列
+                    needVariants.forEach(v => {
+                        const sug = calculateSuggest(v.realStock, v.sales);
+                        const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+                        
+                        purchaseRows.push({
+                            '商品名稱': '',
+                            '尺寸/款式/顏色': v.spec,
+                            'QDM庫存': v.qdmStock,
+                            '實際庫存': v.realStock > 0 ? v.realStock : '',
+                            '前日銷量': v.sales,
+                            '實際採購量': actual,
+                            '建議採購量': sug > 0 ? sug : ''
+                        });
+                    });
+                }
             });
 
             if (purchaseRows.length === 0) {
