@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V2.2 (不讀取 SKU)</title>
+    <title>日光手感 ERP - V2.3 (規格順序:款式/顏色/尺寸)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.2</span></h1>
-                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 移除 SKU 資料抓取</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.3</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 匯出順序重排 (款式/顏色/尺寸)</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
@@ -75,7 +75,7 @@
         <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <div>
-                    <h2 class="text-lg font-bold text-slate-800">📋 商品採購清單 (點擊 ▶ 可展開看顏色/尺寸細項)</h2>
+                    <h2 class="text-lg font-bold text-slate-800">📋 商品採購清單 (點擊 ▶ 可展開看款式/顏色/尺寸細項)</h2>
                     <p class="text-xs text-slate-500 mt-0.5">預設依紅燈/橘燈優先，再依字母順序排序</p>
                 </div>
                 <button onclick="exportPurchaseReport()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm shadow-sm transition flex items-center gap-1">
@@ -125,18 +125,35 @@
             return fullName.substring(0, 8).toUpperCase();
         }
 
-        // 清理規格字串
-        function cleanSpecText(specStr) {
+        // 清理並排列規格字串：徹底刪除 ,,- 等符號，並排序為「款式 顏色 尺寸」
+        function formatSpecText(specStr) {
             if (!specStr) return '';
-            return specStr
+            
+            // 移除特定提示文字
+            let cleaned = specStr
                 .replace(/親子裝尺寸[:：\s]*/g, '')
                 .replace(/親子裝款式[:：\s]*/g, '')
                 .replace(/親子裝顏色[:：\s]*/g, '')
                 .replace(/尺寸[:：\s]*/g, '')
                 .replace(/款式[:：\s]*/g, '')
-                .replace(/顏色[:：\s]*/g, '')
-                .replace(/^[-_\s]+|[-_\s]+$/g, '')
-                .trim();
+                .replace(/顏色[:：\s]*/g, '');
+
+            // 依據逗號拆分，並剔除多餘的逗號/減號/空格
+            const parts = cleaned.split(',')
+                .map(p => p.replace(/^[,_\-\s]+|[,_\-\s]+$/g, '').trim())
+                .filter(p => p.length > 0);
+
+            if (parts.length === 3) {
+                // 假設原始順序為：尺寸, 款式, 顏色 -> 調整為：款式 顏色 尺寸
+                const [size, style, color] = parts;
+                return `${style} ${color} ${size}`;
+            } else if (parts.length === 2) {
+                // 若只有兩項 (例如 顏色, 尺寸 -> 顏色 尺寸)
+                const [p1, p2] = parts;
+                return `${p2} ${p1}`;
+            }
+
+            return parts.join(' ');
         }
 
         function calcRealStock(qdmStock) {
@@ -302,10 +319,12 @@
                             childStatus = `<span class="text-base">🟢</span>`;
                         }
 
+                        const formattedSpec = formatSpecText(v.spec);
+
                         childTr.innerHTML = `
                             <td></td>
                             <td class="p-2 text-right text-slate-400 font-mono">└</td>
-                            <td class="p-2 font-bold text-slate-700">${v.spec || '預設規格'}</td>
+                            <td class="p-2 font-bold text-slate-700">${formattedSpec || '預設規格'}</td>
                             <td class="p-2 text-slate-400 font-mono">${v.qdmStock} 件</td>
                             <td class="p-2 bg-amber-50/80">
                                 <input type="number" value="${v.realStock}" onchange="updateChildStock('${group.code}', ${vIdx}, this.value)"
@@ -364,7 +383,7 @@
                 v.buyQty = calculateSuggest(v.realStock, v.sales);
                 recalculateGroup(group);
                 renderApp();
-                alert(`✅ 【${group.code} - ${v.spec}】入庫 +${addQty} 件！最新庫存：${v.realStock} 件`);
+                alert(`✅ 【${group.code} - ${formatSpecText(v.spec)}】入庫 +${addQty} 件！最新庫存：${v.realStock} 件`);
             }
         }
 
@@ -385,7 +404,6 @@
             group.totalBuyQty = buySum;
         }
 
-        // 解析 QDM 報表：不抓取 SKU 欄位
         function parseQDMData(data) {
             const groupsMap = {};
             let currentParentName = "";
@@ -478,6 +496,7 @@
             reader.readAsArrayBuffer(file);
         }
 
+        // 匯出報表：抬頭修改為「款式/顏色/尺寸」，資料順序自動重排為「款式 顏色 尺寸」
         function exportPurchaseReport() {
             const purchaseRows = [];
             
@@ -493,7 +512,7 @@
                 if (needVariants.length > 0) {
                     purchaseRows.push({
                         '商品名稱': g.fullName,
-                        '尺寸/款式/顏色': '',
+                        '款式/顏色/尺寸': '',
                         'QDM庫存': '',
                         '實際庫存': '',
                         '前日銷量': '',
@@ -504,11 +523,11 @@
                     needVariants.forEach(v => {
                         const sug = calculateSuggest(v.realStock, v.sales);
                         const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
-                        const cleanedSpec = cleanSpecText(v.spec);
+                        const formattedSpec = formatSpecText(v.spec);
 
                         purchaseRows.push({
                             '商品名稱': '',
-                            '尺寸/款式/顏色': cleanedSpec,
+                            '款式/顏色/尺寸': formattedSpec,
                             'QDM庫存': v.qdmStock,
                             '實際庫存': v.realStock > 0 ? v.realStock : '',
                             '前日銷量': v.sales,
