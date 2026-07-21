@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V2.4 (精準清洗 QDM 規格)</title>
+    <title>日光手感 ERP - V2.5 (建議/實際採購量欄位對調)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.4</span></h1>
-                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 徹底清洗長橫線規格 (款式/顏色/尺寸)</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.5</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 匯出報表欄位對調 (建議採購量 ➔ 實際採購量)</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037) 或規格..." 
@@ -125,31 +125,28 @@
             return fullName.substring(0, 8).toUpperCase();
         }
 
-        // 修改點 1：精準清洗規格字串 (利用 ---- 分割)
+        // 精準清洗規格字串 (利用 ---- 分割)
         function formatSpecText(specStr) {
             if (!specStr) return '預設規格';
             
             let valuesStr = specStr;
             
-            // 如果含有 "----" 或 "---"，直接取最後一段（保留真實選項）
             if (specStr.includes('----')) {
                 valuesStr = specStr.split('----').pop();
             } else if (specStr.includes('---')) {
                 valuesStr = specStr.split('---').pop();
             }
 
-            // 清理前後空白與逗號，並將選項切分
             const parts = valuesStr.split(',')
                 .map(p => p.trim())
                 .filter(p => p.length > 0);
 
-            // 若符合 [尺寸, 款式, 顏色] 結構，重排為 款式 + 顏色 + 尺寸
             if (parts.length === 3) {
                 const [size, style, color] = parts;
                 return `${style} ${color} ${size}`;
             } else if (parts.length === 2) {
                 const [p1, p2] = parts;
-                return `${p2} ${p1}`; // 嘗試倒轉顯示
+                return `${p2} ${p1}`;
             }
 
             return parts.join(' ');
@@ -318,7 +315,6 @@
                             childStatus = `<span class="text-base">🟢</span>`;
                         }
 
-                        // 修改點 2：網頁上的規格也套用 formatSpecText，顯示乾淨且正確順序的規格
                         const formattedSpec = formatSpecText(v.spec);
 
                         childTr.innerHTML = `
@@ -496,6 +492,7 @@
             reader.readAsArrayBuffer(file);
         }
 
+        // 修改點：對調「建議採購量」與「實際採購量」的欄位順序
         function exportPurchaseReport() {
             const purchaseRows = [];
             
@@ -515,14 +512,13 @@
                         'QDM庫存': '',
                         '實際庫存': '',
                         '前日銷量': '',
-                        '實際採購量': '',
-                        '建議採購量': ''
+                        '建議採購量': '',
+                        '實際採購量': ''
                     });
 
                     needVariants.forEach(v => {
                         const sug = calculateSuggest(v.realStock, v.sales);
                         const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
-                        // 確保匯出的也是清洗且排好的
                         const formattedSpec = formatSpecText(v.spec);
 
                         purchaseRows.push({
@@ -531,8 +527,8 @@
                             'QDM庫存': v.qdmStock,
                             '實際庫存': v.realStock > 0 ? v.realStock : '',
                             '前日銷量': v.sales,
-                            '實際採購量': actual,
-                            '建議採購量': sug > 0 ? sug : ''
+                            '建議採購量': sug > 0 ? sug : '',
+                            '實際採購量': actual
                         });
                     });
                 }
