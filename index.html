@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V2.5 (強制 Excel 欄位順序)</title>
+    <title>日光手感 ERP - V2.6 (修復款數顯示不一致)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.5</span></h1>
-                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 匯出報表欄位對調 (建議採購量 ➔ 實際採購量)</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.6</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 修正提示訊息款數計數</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037) 或規格..." 
@@ -125,7 +125,7 @@
             return fullName.substring(0, 8).toUpperCase();
         }
 
-        // 精準清洗規格字串 (利用 ---- 分割)
+        // 清洗規格字串 (利用 ---- 分割)
         function formatSpecText(specStr) {
             if (!specStr) return '預設規格';
             
@@ -240,7 +240,8 @@
                 }
             });
 
-            document.getElementById('totalSkuAndStock').innerText = `${sortedGroups.length - 1} 款 / ${totalStock.toLocaleString()} 件`;
+            const actualProductCount = Math.max(0, sortedGroups.length - (allGroup ? 1 : 0));
+            document.getElementById('totalSkuAndStock').innerText = `${actualProductCount} 款 / ${totalStock.toLocaleString()} 件`;
             document.getElementById('totalNeedBuyItems').innerText = `${needBuyItemsCount.toLocaleString()} 款`;
             document.getElementById('totalNeedBuyQty').innerText = `${needBuyQtyCount.toLocaleString()} 件`;
 
@@ -456,7 +457,11 @@
 
             expandedRows.clear();
             renderApp();
-            alert(`✅ 成功匯入 QDM 報表！已解析 ${productsGrouped.length} 款主商品及子規格。`);
+
+            // 修正提示訊息：自動扣除 ALL，顯示正確真實商品款數
+            const hasAllGroup = productsGrouped.some(g => g.code === 'ALL');
+            const realProductCount = Math.max(0, productsGrouped.length - (hasAllGroup ? 1 : 0));
+            alert(`✅ 成功匯入 QDM 報表！已解析 ${realProductCount} 款主商品及子規格。`);
         }
 
         const dropZone = document.getElementById('dropZone');
@@ -492,7 +497,6 @@
             reader.readAsArrayBuffer(file);
         }
 
-        // 強制指定 Excel 欄位名稱與順序
         function exportPurchaseReport() {
             const purchaseRows = [];
             const headerOrder = [
@@ -548,7 +552,6 @@
                 return;
             }
 
-            // 使用 { header: headerOrder } 強制鎖定欄位順序
             const worksheet = XLSX.utils.json_to_sheet(purchaseRows, { header: headerOrder });
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "每日採購單");
