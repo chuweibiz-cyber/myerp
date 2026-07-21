@@ -3,9 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V1.4 (商品簡化代碼)</title>
+    <title>日光手感 ERP - V1.5 (樹狀子規格與ALL置頂)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        .child-row { background-color: #f8fafc; }
+        .rotate-90 { transform: rotate(90deg); }
+    </style>
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans p-4 md:p-8">
 
@@ -14,27 +18,41 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.4</span></h1>
-                <p class="text-sm text-slate-500 mt-1">簡化代碼顯示 (BG001, BA093) + 虛擬庫存(-30)轉換 + 現場盤點</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.5</span></h1>
+                <p class="text-sm text-slate-500 mt-1">支援主商品下拉展開子規格 (尺寸/顏色/款式) + ALL置頂 + 代號排序</p>
             </div>
             <div class="w-full md:w-96">
-                <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋商品代碼 (如 BG001、BA093、XL)..." 
+                <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
                        class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
             </div>
         </header>
 
-        <!-- Summary Cards (統計與資產總覽) -->
-        <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- ALL 全店數據獨立卡片 -->
+        <section class="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-xl shadow-md flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <span class="bg-amber-400 text-slate-900 font-black text-xs px-2.5 py-1 rounded-full uppercase tracking-wider">ALL 全站總計</span>
+                <h2 id="allSummaryText" class="text-xl font-bold mt-2">請匯入 QDM 報表...</h2>
+            </div>
+            <div class="flex gap-6 text-center">
+                <div>
+                    <p class="text-xs text-slate-400">全店總銷量</p>
+                    <p id="allTotalSales" class="text-2xl font-bold text-amber-300">0 件</p>
+                </div>
+                <div class="border-l border-slate-700 pl-6">
+                    <p class="text-xs text-slate-400">全店建議採購量</p>
+                    <p id="allTotalBuyQty" class="text-2xl font-bold text-indigo-300">0 件</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Summary Cards -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                <p class="text-xs font-semibold text-slate-400">SKU 總數 / 在庫總件數</p>
-                <p id="totalSkuAndStock" class="text-2xl font-bold text-slate-800 mt-1">0 SKU / 0 件</p>
+                <p class="text-xs font-semibold text-slate-400">款數 / 在庫總件數</p>
+                <p id="totalSkuAndStock" class="text-2xl font-bold text-slate-800 mt-1">0 款 / 0 件</p>
             </div>
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                <p class="text-xs font-semibold text-slate-400">積壓庫存成本金額 (估算)</p>
-                <p id="totalCostValue" class="text-2xl font-bold text-amber-600 mt-1">$ 0</p>
-            </div>
-            <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-                <p class="text-xs font-semibold text-slate-400">需補貨 SKU 款數</p>
+                <p class="text-xs font-semibold text-slate-400">需補貨款數</p>
                 <p id="totalNeedBuyItems" class="text-2xl font-bold text-indigo-600 mt-1">0 款</p>
             </div>
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
@@ -43,20 +61,12 @@
             </div>
         </section>
 
-        <!-- Category SKU Statistics (分類 SKU 庫存統計) -->
-        <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 class="text-base font-bold text-slate-800 mb-3">🏷️ 各分類 SKU 庫存佈局統計</h2>
-            <div id="categoryTags" class="flex flex-wrap gap-2 text-xs">
-                <span class="text-slate-400">匯入 QDM 報表後自動顯示分類統計...</span>
-            </div>
-        </section>
-
         <!-- QDM File Upload Area -->
         <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-            <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入專區</h2>
+            <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入</h2>
             <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition cursor-pointer">
                 <p class="text-slate-600 font-medium">拖拽 QDM 報表 (product_purchased_export.xlsx) 至此處</p>
-                <p class="text-xs text-slate-400 mt-1">自動將商品名稱簡化為代號 (如 BG001、BA093) 並扣除 30 虛擬庫存</p>
+                <p class="text-xs text-slate-400 mt-1">系統將自動解析子規格 (尺寸/顏色/款式)，並扣除 30 虛擬庫存</p>
                 <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
             </div>
         </section>
@@ -65,8 +75,8 @@
         <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <div>
-                    <h2 class="text-lg font-bold text-slate-800">📋 SKU 庫存盤點與採購建議</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">黃色欄位支援「現場盤點直打」；商品只顯示精簡代號</p>
+                    <h2 class="text-lg font-bold text-slate-800">📋 商品採購清單 (點擊 ▶ 可展開看顏色/尺寸細項)</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">預設依商品代號 (BA, BG, F...) 排序，第一列為 ALL 全站總計</p>
                 </div>
                 <button onclick="exportPurchaseReport()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm shadow-sm transition flex items-center gap-1">
                     📥 匯出每日採購報表 (Excel)
@@ -76,11 +86,12 @@
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse text-sm">
                     <thead>
-                        <tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
+                        <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
+                            <th class="p-3 w-10"></th>
                             <th class="p-3">商品代碼</th>
                             <th class="p-3">SKU / 規格型號</th>
                             <th class="p-3">QDM 原始庫存</th>
-                            <th class="p-3 bg-amber-50 text-amber-900">真實庫存 (盤點校正)</th>
+                            <th class="p-3 bg-amber-50 text-amber-900">真實庫存</th>
                             <th class="p-3">前日銷量</th>
                             <th class="p-3 text-indigo-700">建議採購</th>
                             <th class="p-3 text-indigo-700">實際採購量</th>
@@ -89,7 +100,7 @@
                         </tr>
                     </thead>
                     <tbody id="inventoryTable">
-                        <tr><td colspan="9" class="p-6 text-center text-slate-400">請先匯入 QDM 報表以產生數據...</td></tr>
+                        <tr><td colspan="10" class="p-6 text-center text-slate-400">請先匯入 QDM 報表...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -97,46 +108,39 @@
     </div>
 
     <script>
-        let products = [];
-        const VIRTUAL_OFFSET = 30; // QDM 虛擬庫存基數
+        let productsGrouped = []; // 樹狀商品資料
+        let expandedRows = new Set(); // 記錄哪些商品展開中
+        const VIRTUAL_OFFSET = 30;
 
-        function calculateSuggest(p) {
-            const deficit = p.realStock < 0 ? Math.abs(p.realStock) : 0;
-            if (p.realStock >= 0) {
-                return Math.max(0, p.sales - p.realStock);
-            } else {
-                return p.sales + deficit;
-            }
-        }
-
-        // 提取商品簡短代碼 (例如：【BG001】... -> BG001，若無中括號則抓開頭英數)
         function extractCode(fullName) {
-            if (!fullName) return "UNKNOWN";
+            if (!fullName) return "ALL";
+            if (fullName.includes("QDM商品") || fullName.toUpperCase().includes("ALL")) return "ALL";
             
-            // 優先找 【】 裡面的內容
             const match = fullName.match(/【(.*?)】/);
-            if (match && match[1]) {
-                return match[1].trim();
-            }
+            if (match && match[1]) return match[1].trim().toUpperCase();
 
-            // 次之找開頭的英數組合（例如 BG001 或 BA093）
             const codeMatch = fullName.match(/([a-zA-Z0-9]+)/);
-            if (codeMatch && codeMatch[1]) {
-                return codeMatch[1].trim();
-            }
+            if (codeMatch && codeMatch[1]) return codeMatch[1].trim().toUpperCase();
 
-            return fullName.substring(0, 8);
+            return fullName.substring(0, 8).toUpperCase();
         }
 
-        function extractCategory(code, fullName) {
-            const prefix = code.substring(0, 2).toUpperCase();
-            if (prefix === 'BG') return '女童/洋裝 (BG)';
-            if (prefix === 'BA') return '男童/配件 (BA)';
-            if (prefix === 'BU') return '上衣 (BU)';
-            if (prefix === 'SB') return '童襪/配件 (SB)';
-            if (prefix === 'F') return '親子裝 (F)';
-            if (fullName.includes("包屁衣")) return "包屁衣";
-            return "其他分類";
+        function calculateSuggest(realStock, sales) {
+            const deficit = realStock < 0 ? Math.abs(realStock) : 0;
+            if (realStock >= 0) {
+                return Math.max(0, sales - realStock);
+            } else {
+                return sales + deficit;
+            }
+        }
+
+        function toggleExpand(code) {
+            if (expandedRows.has(code)) {
+                expandedRows.delete(code);
+            } else {
+                expandedRows.add(code);
+            }
+            renderApp();
         }
 
         function renderApp() {
@@ -144,157 +148,272 @@
             const tbody = document.getElementById('inventoryTable');
             tbody.innerHTML = '';
 
-            let totalStock = 0;
-            let totalCost = 0;
-            let needBuyItemsCount = 0;
-            let needBuyQtyCount = 0;
-
-            const categories = {};
-
-            const filtered = products.filter(p => 
-                p.code.toLowerCase().includes(query) || 
-                p.spec.toLowerCase().includes(query) ||
-                p.category.toLowerCase().includes(query) ||
-                (p.sku && p.sku.toLowerCase().includes(query))
-            );
-
-            if (products.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="p-6 text-center text-slate-400">目前尚無商品資料，請匯入 QDM 報表。</td></tr>';
-                updateStats(0, 0, 0, 0, 0);
-                renderCategoryTags({});
+            if (productsGrouped.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-slate-400">目前尚無商品資料，請匯入 QDM 報表。</td></tr>';
                 return;
             }
 
-            products.forEach(p => {
-                if (!categories[p.category]) {
-                    categories[p.category] = { skuCount: 0, stockQty: 0 };
-                }
-                categories[p.category].skuCount += 1;
-                categories[p.category].stockQty += Math.max(0, p.realStock);
+            // 1. 先處理排序：ALL 放第一位，其餘依代碼 (BA, BG, F...) 自然排序
+            let sortedGroups = [...productsGrouped].sort((a, b) => {
+                if (a.code === 'ALL') return -1;
+                if (b.code === 'ALL') return 1;
+                return a.code.localeCompare(b.code, 'en', { numeric: true });
+            });
 
-                if (p.realStock > 0) {
-                    totalStock += p.realStock;
-                    totalCost += (p.realStock * p.cost);
-                }
+            // 更新 ALL 全站頂部卡片
+            const allGroup = sortedGroups.find(g => g.code === 'ALL');
+            if (allGroup) {
+                document.getElementById('allSummaryText').innerText = `全站共有 ${allGroup.variants.length || 0} 項商品變體規格`;
+                document.getElementById('allTotalSales').innerText = `${allGroup.totalSales} 件`;
+                document.getElementById('allTotalBuyQty').innerText = `${allGroup.totalBuyQty} 件`;
+            }
 
-                const sug = calculateSuggest(p);
-                const actualBuy = (p.buyQty !== undefined && p.buyQty !== null) ? p.buyQty : sug;
-                if (actualBuy > 0) {
-                    needBuyItemsCount++;
-                    needBuyQtyCount += actualBuy;
+            // 全局統計計算
+            let totalStock = 0;
+            let needBuyItemsCount = 0;
+            let needBuyQtyCount = 0;
+
+            sortedGroups.forEach(g => {
+                if (g.code !== 'ALL') {
+                    totalStock += g.totalRealStock;
+                    if (g.totalBuyQty > 0) {
+                        needBuyItemsCount++;
+                        needBuyQtyCount += g.totalBuyQty;
+                    }
                 }
             });
 
-            updateStats(products.length, totalStock, totalCost, needBuyItemsCount, needBuyQtyCount);
-            renderCategoryTags(categories);
+            document.getElementById('totalSkuAndStock').innerText = `${sortedGroups.length - 1} 款 / ${totalStock.toLocaleString()} 件`;
+            document.getElementById('totalNeedBuyItems').innerText = `${needBuyItemsCount.toLocaleString()} 款`;
+            document.getElementById('totalNeedBuyQty').innerText = `${needBuyQtyCount.toLocaleString()} 件`;
 
-            filtered.forEach(p => {
-                const suggest = calculateSuggest(p);
+            // 搜尋過濾
+            const filteredGroups = sortedGroups.filter(g => {
+                if (g.code.toLowerCase().includes(query)) return true;
+                return g.variants.some(v => 
+                    v.spec.toLowerCase().includes(query) || 
+                    v.sku.toLowerCase().includes(query)
+                );
+            });
+
+            filteredGroups.forEach(group => {
+                const isExpanded = expandedRows.has(group.code);
+                const hasChildren = group.variants.length > 0;
+                const isALL = group.code === 'ALL';
+
+                // 主商品列 TR
+                const tr = document.createElement('tr');
+                tr.className = isALL 
+                    ? 'bg-amber-100/60 font-bold border-b-2 border-amber-300' 
+                    : 'border-b border-slate-200 hover:bg-slate-50 transition font-semibold';
+
+                const arrowHtml = hasChildren && !isALL 
+                    ? `<button onclick="toggleExpand('${group.code}')" class="p-1 hover:bg-slate-200 rounded text-slate-500 font-bold">
+                        <span class="inline-block transition-transform ${isExpanded ? 'rotate-90' : ''}">▶</span>
+                       </button>`
+                    : '';
+
                 let statusBadge = '';
-                if (p.realStock < 0) {
-                    statusBadge = `<span class="px-2 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-bold">缺 ${Math.abs(p.realStock)} 件</span>`;
-                } else if (suggest > 0) {
+                if (group.totalRealStock < 0) {
+                    statusBadge = `<span class="px-2 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-bold">缺 ${Math.abs(group.totalRealStock)} 件</span>`;
+                } else if (group.totalBuyQty > 0) {
                     statusBadge = '<span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">需補進貨</span>';
                 } else {
                     statusBadge = '<span class="px-2 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">庫存充足</span>';
                 }
 
-                const displayBuyQty = (p.buyQty !== undefined && p.buyQty !== null) ? p.buyQty : suggest;
-
-                const tr = document.createElement('tr');
-                tr.className = 'border-b border-slate-100 hover:bg-slate-50';
                 tr.innerHTML = `
-                    <td class="p-3">
-                        <div class="font-bold text-slate-900 text-base font-mono">${p.code}</div>
-                        <span class="text-[10px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">${p.category}</span>
+                    <td class="p-3 text-center">${arrowHtml}</td>
+                    <td class="p-3 text-base font-mono text-indigo-950 font-bold">
+                        ${group.code} ${hasChildren && !isALL ? `<span class="text-xs font-normal text-slate-500">(${group.variants.length}細項)</span>` : ''}
                     </td>
-                    <td class="p-3">
-                        <div class="text-xs font-mono font-bold text-slate-700">${p.sku || '無SKU'}</div>
-                        <div class="text-xs text-slate-500">${p.spec || '預設'}</div>
-                    </td>
-                    <td class="p-3 text-slate-400 font-mono">${p.qdmStock} 件</td>
-                    <td class="p-3 bg-amber-50/50">
-                        <input type="number" value="${p.realStock}" onchange="updateRealStock(${p.id}, this.value)" 
-                               class="w-20 border border-amber-300 rounded px-2 py-1 text-center font-bold text-amber-900 bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500"> 件
-                    </td>
-                    <td class="p-3 font-semibold text-slate-900">${p.sales} 件</td>
-                    <td class="p-3 font-bold text-indigo-600">${suggest} 件</td>
-                    <td class="p-3">
-                        <input type="number" min="0" value="${displayBuyQty}" onchange="updateBuyQty(${p.id}, this.value)" 
-                               class="w-20 border border-slate-300 rounded px-2 py-1 text-center font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"> 件
-                    </td>
+                    <td class="p-3 text-xs text-slate-500">${isALL ? '全站商品總彙整' : group.fullName}</td>
+                    <td class="p-3 text-slate-400 font-mono">${group.totalQdmStock} 件</td>
+                    <td class="p-3 text-amber-900 font-bold bg-amber-50/40">${group.totalRealStock} 件</td>
+                    <td class="p-3 text-slate-900 font-bold">${group.totalSales} 件</td>
+                    <td class="p-3 text-indigo-600 font-bold">${group.totalSuggestQty} 件</td>
+                    <td class="p-3 font-bold text-indigo-700">${group.totalBuyQty} 件</td>
                     <td class="p-3">${statusBadge}</td>
                     <td class="p-3">
-                        <button onclick="receiveStock(${p.id})" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium transition shadow-sm">
-                            盤點入庫
-                        </button>
+                        ${hasChildren && !isALL ? `
+                            <button onclick="toggleExpand('${group.code}')" class="text-xs text-indigo-600 hover:underline">
+                                ${isExpanded ? '收合細項' : '展開細項'}
+                            </button>
+                        ` : ''}
                     </td>
                 `;
                 tbody.appendChild(tr);
+
+                // 若展開，渲染子規格列
+                if (isExpanded && hasChildren && !isALL) {
+                    group.variants.forEach((v, vIdx) => {
+                        const childTr = document.createElement('tr');
+                        childTr.className = 'child-row border-b border-slate-200/60 text-xs';
+                        
+                        const sug = calculateSuggest(v.realStock, v.sales);
+                        const displayBuy = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+
+                        childTr.innerHTML = `
+                            <td></td>
+                            <td class="p-2 text-right text-slate-400 font-mono">└</td>
+                            <td class="p-2">
+                                <div class="font-bold text-slate-700">${v.spec || '預設規格'}</div>
+                                <div class="text-[10px] font-mono text-slate-400">${v.sku || '無SKU'}</div>
+                            </td>
+                            <td class="p-2 text-slate-400 font-mono">${v.qdmStock} 件</td>
+                            <td class="p-2 bg-amber-50/80">
+                                <input type="number" value="${v.realStock}" onchange="updateChildStock('${group.code}', ${vIdx}, this.value)"
+                                       class="w-16 border border-amber-300 rounded px-1 py-0.5 text-center font-bold bg-white text-amber-900"> 件
+                            </td>
+                            <td class="p-2 font-bold text-slate-800">${v.sales} 件</td>
+                            <td class="p-2 font-bold text-indigo-600">${sug} 件</td>
+                            <td class="p-2">
+                                <input type="number" min="0" value="${displayBuy}" onchange="updateChildBuyQty('${group.code}', ${vIdx}, this.value)"
+                                       class="w-16 border border-slate-300 rounded px-1 py-0.5 text-center font-bold text-slate-800 bg-white"> 件
+                            </td>
+                            <td class="p-2 text-slate-400">${v.realStock < 0 ? `缺 ${Math.abs(v.realStock)}` : '正常'}</td>
+                            <td class="p-2">
+                                <button onclick="receiveChildStock('${group.code}', ${vIdx})" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px]">
+                                    入庫
+                                </button>
+                            </td>
+                        `;
+                        tbody.appendChild(childTr);
+                    });
+                }
             });
         }
 
-        function renderCategoryTags(categories) {
-            const container = document.getElementById('categoryTags');
-            container.innerHTML = '';
-            
-            const keys = Object.keys(categories);
-            if (keys.length === 0) {
-                container.innerHTML = '<span class="text-slate-400">匯入 QDM 報表後自動顯示分類統計...</span>';
-                return;
-            }
-
-            keys.forEach(cat => {
-                const info = categories[cat];
-                const tag = document.createElement('div');
-                tag.className = 'bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-2';
-                tag.innerHTML = `
-                    <span class="font-bold text-slate-700">${cat}</span>
-                    <span class="bg-indigo-100 text-indigo-700 font-mono px-1.5 py-0.5 rounded text-xs">${info.skuCount} SKU</span>
-                    <span class="text-slate-500 text-xs">(在庫 ${info.stockQty} 件)</span>
-                `;
-                container.appendChild(tag);
-            });
-        }
-
-        function updateStats(skuTotal, stock, cost, buyItems, buyQty) {
-            document.getElementById('totalSkuAndStock').innerText = `${skuTotal} SKU / ${stock.toLocaleString()} 件`;
-            document.getElementById('totalCostValue').innerText = `$ ${cost.toLocaleString()}`;
-            document.getElementById('totalNeedBuyItems').innerText = `${buyItems.toLocaleString()} 款`;
-            document.getElementById('totalNeedBuyQty').innerText = `${buyQty.toLocaleString()} 件`;
-        }
-
-        function updateRealStock(id, val) {
-            const p = products.find(item => item.id === id);
-            if (p) {
-                p.realStock = parseInt(val) || 0;
-                p.buyQty = calculateSuggest(p);
+        // 修改子規格真實庫存
+        function updateChildStock(code, vIdx, val) {
+            const group = productsGrouped.find(g => g.code === code);
+            if (group && group.variants[vIdx]) {
+                const v = group.variants[vIdx];
+                v.realStock = parseInt(val) || 0;
+                v.buyQty = calculateSuggest(v.realStock, v.sales);
+                recalculateGroup(group);
                 renderApp();
             }
         }
 
-        function updateBuyQty(id, val) {
-            const p = products.find(item => item.id === id);
-            if (p) {
-                p.buyQty = parseInt(val) || 0;
+        // 修改子規格採購量
+        function updateChildBuyQty(code, vIdx, val) {
+            const group = productsGrouped.find(g => g.code === code);
+            if (group && group.variants[vIdx]) {
+                group.variants[vIdx].buyQty = parseInt(val) || 0;
+                recalculateGroup(group);
                 renderApp();
             }
         }
 
-        function receiveStock(id) {
-            const p = products.find(item => item.id === id);
-            if (p) {
-                const sug = calculateSuggest(p);
-                const addQty = (p.buyQty !== undefined && p.buyQty !== null) ? p.buyQty : sug;
+        // 單一子規格快速入庫
+        function receiveChildStock(code, vIdx) {
+            const group = productsGrouped.find(g => g.code === code);
+            if (group && group.variants[vIdx]) {
+                const v = group.variants[vIdx];
+                const sug = calculateSuggest(v.realStock, v.sales);
+                const addQty = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
                 if (addQty <= 0) {
                     alert('目前採購數量為 0，無需入庫！');
                     return;
                 }
-                p.realStock += addQty;
-                p.buyQty = calculateSuggest(p);
+                v.realStock += addQty;
+                v.buyQty = calculateSuggest(v.realStock, v.sales);
+                recalculateGroup(group);
                 renderApp();
-                alert(`【盤點入庫成功】${p.code} (${p.spec}) 入庫 +${addQty} 件！最新真實庫存：${p.realStock} 件`);
+                alert(`✅ 【${group.code} - ${v.spec}】入庫 +${addQty} 件！最新庫存：${v.realStock} 件`);
             }
+        }
+
+        // 重新彙整父商品的總合數據
+        function recalculateGroup(group) {
+            let qdmSum = 0, realSum = 0, salesSum = 0, sugSum = 0, buySum = 0;
+            group.variants.forEach(v => {
+                qdmSum += v.qdmStock;
+                realSum += v.realStock;
+                salesSum += v.sales;
+                const sug = calculateSuggest(v.realStock, v.sales);
+                sugSum += sug;
+                buySum += (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+            });
+            group.totalQdmStock = qdmSum;
+            group.totalRealStock = realSum;
+            group.totalSales = salesSum;
+            group.totalSuggestQty = sugSum;
+            group.totalBuyQty = buySum;
+        }
+
+        // 解析 QDM Excel 報表 (關鍵：依商品名稱進行樹狀父子分組)
+        function parseQDMData(data) {
+            const groupsMap = {};
+            let currentParentName = "";
+            let currentCode = "";
+
+            data.forEach((row) => {
+                // 如果這一列包含商品名稱（代表進入主商品列）
+                if (row['商品名稱']) {
+                    currentParentName = row['商品名稱'];
+                    currentCode = extractCode(currentParentName);
+
+                    if (!groupsMap[currentCode]) {
+                        groupsMap[currentCode] = {
+                            code: currentCode,
+                            fullName: currentParentName,
+                            variants: [],
+                            totalQdmStock: 0,
+                            totalRealStock: 0,
+                            totalSales: 0,
+                            totalSuggestQty: 0,
+                            totalBuyQty: 0
+                        };
+                    }
+                }
+
+                // 如果包含型號、SKU 或庫存資料（代表規格列）
+                if (row['型號'] || row['SKU'] || (row['庫存'] !== undefined && !row['商品名稱'])) {
+                    const spec = row['型號'] || '預設規格';
+                    const sku = row['SKU'] || '';
+                    const rawQdmStock = parseInt(row['庫存']) || 0;
+                    const sales = parseInt(row['數量']) || 0;
+                    const realStock = rawQdmStock - VIRTUAL_OFFSET;
+
+                    const variantObj = {
+                        spec: spec,
+                        sku: sku,
+                        qdmStock: rawQdmStock,
+                        realStock: realStock,
+                        sales: sales,
+                        buyQty: calculateSuggest(realStock, sales)
+                    };
+
+                    if (!groupsMap[currentCode]) {
+                        // 防止無主商品標題的情況
+                        currentCode = 'ALL';
+                        groupsMap[currentCode] = {
+                            code: 'ALL',
+                            fullName: 'QDM全站商品',
+                            variants: [],
+                            totalQdmStock: 0, totalRealStock: 0, totalSales: 0, totalSuggestQty: 0, totalBuyQty: 0
+                        };
+                    }
+                    groupsMap[currentCode].variants.push(variantObj);
+                }
+            });
+
+            // 計算各 Group 的總合
+            productsGrouped = Object.values(groupsMap);
+            productsGrouped.forEach(g => recalculateGroup(g));
+
+            // 預設將包含缺貨或銷量的品項設為展開狀態，方便盤點
+            expandedRows.clear();
+            productsGrouped.forEach(g => {
+                if (g.totalSales > 0 || g.totalRealStock < 0) {
+                    expandedRows.add(g.code);
+                }
+            });
+
+            renderApp();
+            alert(`✅ 成功匯入 QDM 報表！已解析 ${productsGrouped.length} 款主商品及子規格。`);
         }
 
         // QDM Excel 文件讀取
@@ -331,88 +450,42 @@
             reader.readAsArrayBuffer(file);
         }
 
-        function parseQDMData(data) {
-            products = [];
-            let idCounter = 1;
-            let currentParentName = "";
-            let currentAvgPrice = 0;
-
-            data.forEach((row) => {
-                if (row['商品名稱']) {
-                    currentParentName = row['商品名稱'];
-                    currentAvgPrice = parseFloat(row['平均售價']) || 0;
-                }
-
-                if (row['型號'] || row['SKU'] || (row['庫存'] !== undefined && !row['商品名稱'])) {
-                    const specName = row['型號'] || '預設規格';
-                    const sku = row['SKU'] || '';
-                    const rawQdmStock = parseInt(row['庫存']) || 0;
-                    const sales = parseInt(row['數量']) || 0;
-                    
-                    const code = extractCode(currentParentName);
-                    const category = extractCategory(code, currentParentName);
-                    const calculatedRealStock = rawQdmStock - VIRTUAL_OFFSET;
-                    const estCost = Math.round(currentAvgPrice * 0.35);
-
-                    const pObj = {
-                        id: idCounter++,
-                        code: code,
-                        fullName: currentParentName,
-                        category: category,
-                        sku: sku,
-                        spec: specName,
-                        qdmStock: rawQdmStock,
-                        realStock: calculatedRealStock,
-                        sales: sales,
-                        cost: estCost,
-                        buyQty: null
-                    };
-                    pObj.buyQty = calculateSuggest(pObj);
-                    products.push(pObj);
-                }
-            });
-
-            renderApp();
-            alert(`✅ 成功匯入 QDM 報表！已自動將商品名稱轉為純代號，並解析出 ${products.length} 項 SKU。`);
-        }
-
         function exportPurchaseReport() {
-            const purchaseList = products.filter(p => {
-                const sug = calculateSuggest(p);
-                const actual = (p.buyQty !== undefined && p.buyQty !== null) ? p.buyQty : sug;
-                return actual > 0;
-            }).map(p => {
-                const sug = calculateSuggest(p);
-                const actual = (p.buyQty !== undefined && p.buyQty !== null) ? p.buyQty : sug;
-                return {
-                    '商品分類': p.category,
-                    '商品代碼': p.code,
-                    'SKU': p.sku,
-                    '規格 (型號)': p.spec,
-                    'QDM顯示庫存': p.qdmStock,
-                    '現場真實庫存': p.realStock,
-                    '前日銷售量': p.sales,
-                    '建議採購量': sug,
-                    '實際採購下單量': actual,
-                    '預估成本/件': p.cost,
-                    '預估採購小計': actual * p.cost
-                };
+            const purchaseRows = [];
+            
+            productsGrouped.forEach(g => {
+                if (g.code === 'ALL') return; // 不匯出 ALL 列
+                g.variants.forEach(v => {
+                    const sug = calculateSuggest(v.realStock, v.sales);
+                    const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+                    if (actual > 0) {
+                        purchaseRows.push({
+                            '商品代碼': g.code,
+                            '完整商品名稱': g.fullName,
+                            '規格(顏色/尺寸)': v.spec,
+                            'SKU': v.sku,
+                            'QDM顯示庫存': v.qdmStock,
+                            '真實庫存': v.realStock,
+                            '前日銷量': v.sales,
+                            '建議採購量': sug,
+                            '實際採購下單量': actual
+                        });
+                    }
+                });
             });
 
-            if (purchaseList.length === 0) {
-                alert('目前無任何 SKU 需要採購！');
+            if (purchaseRows.length === 0) {
+                alert('目前無任何商品規格需要採購！');
                 return;
             }
 
-            const worksheet = XLSX.utils.json_to_sheet(purchaseList);
+            const worksheet = XLSX.utils.json_to_sheet(purchaseRows);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "每日採購單");
 
             const today = new Date().toISOString().split('T')[0];
-            XLSX.writeFile(workbook, `日光手感_每日採購報表_${today}.xlsx`);
+            XLSX.writeFile(workbook, `日光手感_採購報表_${today}.xlsx`);
         }
-
-        renderApp();
     </script>
 </body>
 </html>
