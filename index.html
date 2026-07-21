@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V2.3 (規格順序:款式/顏色/尺寸)</title>
+    <title>日光手感 ERP - V2.4 (精準清洗 QDM 規格)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,11 +18,11 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.3</span></h1>
-                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 匯出順序重排 (款式/顏色/尺寸)</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.4</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 徹底清洗長橫線規格 (款式/顏色/尺寸)</p>
             </div>
             <div class="w-full md:w-96">
-                <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
+                <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037) 或規格..." 
                        class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
             </div>
         </header>
@@ -125,32 +125,31 @@
             return fullName.substring(0, 8).toUpperCase();
         }
 
-        // 清理並排列規格字串：徹底刪除 ,,- 等符號，並排序為「款式 顏色 尺寸」
+        // 修改點 1：精準清洗規格字串 (利用 ---- 分割)
         function formatSpecText(specStr) {
-            if (!specStr) return '';
+            if (!specStr) return '預設規格';
             
-            // 移除特定提示文字
-            let cleaned = specStr
-                .replace(/親子裝尺寸[:：\s]*/g, '')
-                .replace(/親子裝款式[:：\s]*/g, '')
-                .replace(/親子裝顏色[:：\s]*/g, '')
-                .replace(/尺寸[:：\s]*/g, '')
-                .replace(/款式[:：\s]*/g, '')
-                .replace(/顏色[:：\s]*/g, '');
+            let valuesStr = specStr;
+            
+            // 如果含有 "----" 或 "---"，直接取最後一段（保留真實選項）
+            if (specStr.includes('----')) {
+                valuesStr = specStr.split('----').pop();
+            } else if (specStr.includes('---')) {
+                valuesStr = specStr.split('---').pop();
+            }
 
-            // 依據逗號拆分，並剔除多餘的逗號/減號/空格
-            const parts = cleaned.split(',')
-                .map(p => p.replace(/^[,_\-\s]+|[,_\-\s]+$/g, '').trim())
+            // 清理前後空白與逗號，並將選項切分
+            const parts = valuesStr.split(',')
+                .map(p => p.trim())
                 .filter(p => p.length > 0);
 
+            // 若符合 [尺寸, 款式, 顏色] 結構，重排為 款式 + 顏色 + 尺寸
             if (parts.length === 3) {
-                // 假設原始順序為：尺寸, 款式, 顏色 -> 調整為：款式 顏色 尺寸
                 const [size, style, color] = parts;
                 return `${style} ${color} ${size}`;
             } else if (parts.length === 2) {
-                // 若只有兩項 (例如 顏色, 尺寸 -> 顏色 尺寸)
                 const [p1, p2] = parts;
-                return `${p2} ${p1}`;
+                return `${p2} ${p1}`; // 嘗試倒轉顯示
             }
 
             return parts.join(' ');
@@ -319,12 +318,13 @@
                             childStatus = `<span class="text-base">🟢</span>`;
                         }
 
+                        // 修改點 2：網頁上的規格也套用 formatSpecText，顯示乾淨且正確順序的規格
                         const formattedSpec = formatSpecText(v.spec);
 
                         childTr.innerHTML = `
                             <td></td>
                             <td class="p-2 text-right text-slate-400 font-mono">└</td>
-                            <td class="p-2 font-bold text-slate-700">${formattedSpec || '預設規格'}</td>
+                            <td class="p-2 font-bold text-slate-700">${formattedSpec}</td>
                             <td class="p-2 text-slate-400 font-mono">${v.qdmStock} 件</td>
                             <td class="p-2 bg-amber-50/80">
                                 <input type="number" value="${v.realStock}" onchange="updateChildStock('${group.code}', ${vIdx}, this.value)"
@@ -496,7 +496,6 @@
             reader.readAsArrayBuffer(file);
         }
 
-        // 匯出報表：抬頭修改為「款式/顏色/尺寸」，資料順序自動重排為「款式 顏色 尺寸」
         function exportPurchaseReport() {
             const purchaseRows = [];
             
@@ -523,6 +522,7 @@
                     needVariants.forEach(v => {
                         const sug = calculateSuggest(v.realStock, v.sales);
                         const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+                        // 確保匯出的也是清洗且排好的
                         const formattedSpec = formatSpecText(v.spec);
 
                         purchaseRows.push({
