@@ -1,324 +1,230 @@
-<!doctype html>
-<html lang="zh-Hant">
+<!DOCTYPE html>
+<html lang="zh-TW">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>兒童服飾 ERP Lite - V1.0</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>兒童服飾 ERP Lite - V1.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
-<body class="bg-gray-100 min-h-screen font-sans">
-  <div class="max-w-7xl mx-auto p-6">
-    <header class="mb-6">
-      <h1 class="text-2xl font-semibold">兒童服飾 ERP Lite - V1.0</h1>
-      <p class="text-sm text-gray-600">營運模式：先賣後買 + TOP10 少量現貨策略</p>
-    </header>
+<body class="bg-slate-100 text-slate-800 font-sans p-4 md:p-8">
 
-    <!-- 搜尋列 -->
-    <div class="mb-4">
-      <input id="search" placeholder="超級搜尋：輸入名稱、顏色、尺寸或編號（例：100、白、熊熊）" class="w-full p-3 rounded-lg border border-gray-300" />
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- 主要面板 -->
-      <div class="lg:col-span-2 space-y-6">
-        <!-- 匯入區 -->
-        <section class="bg-white p-4 rounded shadow">
-          <h2 class="font-medium">QDM 檔案匯入模擬</h2>
-          <p class="text-sm text-gray-500">拖曳或點選上傳 order_export.xlsx 或 product_purchased_ex.xlsx（模擬解析）</p>
-
-          <div id="dropZone" class="mt-4 border-2 border-dashed border-gray-300 rounded p-6 text-center text-gray-600 hover:bg-gray-50">
-            拖曳檔案到此或 <button id="fileBtn" class="text-blue-600 underline">選擇檔案</button>
-            <input type="file" id="fileInput" class="hidden" />
-          </div>
-
-          <div id="importLog" class="mt-3 text-sm text-gray-700"></div>
-        </section>
-
-        <!-- 商品矩陣列表 -->
-        <section class="bg-white p-4 rounded shadow">
-          <h2 class="font-medium">商品規格矩陣與庫存狀態</h2>
-          <div id="productsContainer" class="mt-4 space-y-6"></div>
-        </section>
-      </div>
-
-      <!-- 採購清單 -->
-      <aside class="bg-white p-4 rounded shadow">
-        <h2 class="font-medium">採購管理與補貨建議</h2>
-        <div class="mt-3 text-sm text-gray-600">可編輯採購數量，按「收貨」會將數量加入庫存並更新建議。</div>
-
-        <div class="mt-4 overflow-x-auto">
-          <table class="min-w-full text-sm" id="procureTable">
-            <thead class="text-left text-xs text-gray-500 uppercase">
-              <tr>
-                <th class="p-2">商品名稱</th>
-                <th class="p-2">規格</th>
-                <th class="p-2">前日銷售</th>
-                <th class="p-2">目前庫存</th>
-                <th class="p-2">建議採購數量</th>
-                <th class="p-2">採購數量</th>
-                <th class="p-2">系統狀態</th>
-                <th class="p-2">操作</th>
-              </tr>
-            </thead>
-            <tbody id="procureBody" class="text-gray-700"></tbody>
-          </table>
-        </div>
-      </aside>
-    </div>
-  </div>
-
-  <script>
-    // 基本設定
-    const SIZES = ['73','80','90','100'];
-    const COLORS = ['白','粉','黃'];
-
-    // 初始樣本資料（扁平化至規格層級）
-    let items = [];
-    const sampleProducts = [
-      {name: '熊熊連身衣', sku: 'BB-001', isTop10: true, stockTarget: 8},
-      {name: '小鯨魚套裝', sku: 'WH-100', isTop10: true, stockTarget: 6},
-      {name: '純棉上衣', sku: 'CT-300', isTop10: false, stockTarget: 0}
-    ];
-
-    // 產生每個產品的規格
-    let idSeq = 1;
-    sampleProducts.forEach(p => {
-      COLORS.forEach(color => {
-        SIZES.forEach(size => {
-          items.push({
-            id: idSeq++,
-            productName: p.name,
-            sku: p.sku,
-            color,
-            size,
-            isTop10: p.isTop10,
-            stockTarget: p.stockTarget,
-            prevSales: Math.floor(Math.random()*3),
-            stock: Math.floor(Math.random()*6)
-          });
-        });
-      });
-    });
-
-    // DOM refs
-    const searchEl = document.getElementById('search');
-    const productsContainer = document.getElementById('productsContainer');
-    const procureBody = document.getElementById('procureBody');
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const fileBtn = document.getElementById('fileBtn');
-    const importLog = document.getElementById('importLog');
-
-    function computeSuggestion(it){
-      if(it.isTop10){
-        return Math.max(it.prevSales + (it.stockTarget||0) - it.stock, 0);
-      } else {
-        return Math.max(it.prevSales - it.stock, 0);
-      }
-    }
-
-    function statusFor(it){
-      const sug = computeSuggestion(it);
-      if(it.isTop10){
-        if(it.stock >= (it.stockTarget||0)) return {text:'充足', color:'bg-green-200'};
-        if(it.stock < it.prevSales) return {text:'接單待採購', color:'bg-blue-200'};
-        return {text:'低於現貨目標', color:'bg-yellow-200'};
-      } else {
-        if(it.stock >= it.prevSales) return {text:'充足', color:'bg-green-200'};
-        return {text:'接單待採購', color:'bg-blue-200'};
-      }
-    }
-
-    function renderProducts(filter=''){
-      productsContainer.innerHTML = '';
-      const groups = {};
-      items.filter(it => {
-        const text = (it.productName+' '+it.sku+' '+it.color+' '+it.size).toLowerCase();
-        return text.includes(filter.toLowerCase());
-      }).forEach(it => {
-        const key = it.productName + '|' + it.sku + '|' + (it.isTop10? 'TOP10':'');
-        groups[key] = groups[key] || [];
-        groups[key].push(it);
-      });
-
-      Object.keys(groups).forEach(key=>{
-        const grp = groups[key];
-        const header = grp[0];
-        const card = document.createElement('div');
-        card.className = 'border rounded p-3 bg-white';
-        card.innerHTML = `
-          <div class="flex justify-between items-center">
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-              <div class="font-semibold">${header.productName} <span class="text-xs text-gray-500">${header.sku}</span></div>
-              <div class="text-xs text-gray-500">${header.isTop10? 'TOP10 熱銷':'一般商品'}</div>
+                <h1 class="text-2xl font-bold text-slate-900">兒童服飾 ERP Lite <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.1</span></h1>
+                <p class="text-sm text-slate-500 mt-1">先賣後買 + TOP10 預備庫存補貨邏輯</p>
             </div>
-            <div class="text-sm text-gray-600">前一日銷售總和：${grp.reduce((s,i)=>s+i.prevSales,0)}</div>
-          </div>
-          <div class="mt-3 overflow-x-auto">
-            <table class="min-w-full text-sm border-collapse">
-              <thead>
-                <tr class="text-left text-xs text-gray-500">
-                  <th class="p-2">顏色 / 尺寸</th>
-                  ${SIZES.map(sz=>`<th class="p-2">${sz}</th>`).join('')}
-                </tr>
-              </thead>
-              <tbody>
-                ${COLORS.map(color=>{
-                  return `<tr><td class="p-2 font-medium">${color}</td>` + SIZES.map(sz=>{
-                    const it = grp.find(x=>x.color===color && x.size===sz);
-                    const st = statusFor(it);
-                    return `<td class="p-2"><div class="inline-flex items-center gap-2"><span class="w-3 h-3 rounded-full ${st.color}"></span><div><div class="font-medium">${it.stock}</div><div class="text-xs text-gray-500">建議:${computeSuggestion(it)}</div></div></div></td>`;
-                  }).join('') + `</tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
-        productsContainer.appendChild(card);
-      });
-    }
+            <div class="w-full md:w-96">
+                <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 超級搜尋（輸入商品、尺寸如 100、顏色如 白）..." 
+                       class="w-full border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+            </div>
+        </header>
 
-    function renderProcure(){
-      procureBody.innerHTML = '';
-      items.forEach(it=>{
-        const sug = computeSuggestion(it);
-        const st = statusFor(it);
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="p-2">${it.productName}</td>
-          <td class="p-2">${it.color}/${it.size}</td>
-          <td class="p-2">${it.prevSales}</td>
-          <td class="p-2">${it.stock}</td>
-          <td class="p-2">${sug}</td>
-          <td class="p-2"><input type="number" min="0" value="${sug}" data-id="${it.id}" class="w-20 p-1 border rounded" /></td>
-          <td class="p-2"><span class="px-2 py-1 rounded ${st.color}">${st.text}</span></td>
-          <td class="p-2 space-x-2">
-            <button data-action="create" data-id="${it.id}" class="px-2 py-1 bg-blue-600 text-white rounded text-xs">建立採購單</button>
-            <button data-action="receive" data-id="${it.id}" class="px-2 py-1 bg-green-600 text-white rounded text-xs">收貨</button>
-          </td>
-        `;
-        procureBody.appendChild(tr);
-      });
+        <!-- QDM File Upload Area -->
+        <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入專區</h2>
+            <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition cursor-pointer">
+                <p class="text-slate-600 font-medium">拖拽 QDM 報表 (order_export.xlsx / product_purchased_ex.xlsx) 至此處，或點擊選擇檔案</p>
+                <p class="text-xs text-slate-400 mt-1">支援自動解析 QDM 規格與前日銷量更新</p>
+                <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
+            </div>
+        </section>
 
-      // attach handlers
-      procureBody.querySelectorAll('button').forEach(btn=>{
-        btn.addEventListener('click', e=>{
-          const id = Number(btn.dataset.id);
-          const action = btn.dataset.action;
-          const item = items.find(x=>x.id===id);
-          const input = procureBody.querySelector(`input[data-id="${id}"]`);
-          const qty = Number(input.value)||0;
-          if(action==='create'){
-            alert(`已建立採購單：${item.productName} ${item.color}/${item.size} 數量 ${qty}`);
-          } else if(action==='receive'){
-            item.stock += qty;
-            // reset input to 0
-            input.value = computeSuggestion(item);
-            renderAll();
-          }
-        });
-      });
-    }
+        <!-- Purchase & Inventory Management Table -->
+        <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold text-slate-800">📋 採購管理與補貨建議</h2>
+                <span class="text-xs text-slate-500">一般商品公式：採購建議 = Max(0, 前日銷售 - 目前庫存)</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200 text-slate-600">
+                            <th class="p-3">商品名稱</th>
+                            <th class="p-3">規格 (尺寸/顏色)</th>
+                            <th class="p-3">類型</th>
+                            <th class="p-3">前日銷售</th>
+                            <th class="p-3">目前庫存</th>
+                            <th class="p-3 text-indigo-700">建議採購</th>
+                            <th class="p-3 text-indigo-700">採購數量（可修改）</th>
+                            <th class="p-3">狀態</th>
+                            <th class="p-3">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventoryTable">
+                        <!-- Dynamic Rows -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
 
-    function renderAll(){
-      renderProducts(searchEl.value||'');
-      renderProcure();
-    }
+    <script>
+        let products = [
+            { id: 1, name: "熊熊短袖包屁衣", size: "80", color: "白", isTop10: false, targetStock: 0, sales: 5, stock: 2, buyQty: 3 },
+            { id: 2, name: "熊熊短袖包屁衣", size: "90", color: "粉", isTop10: false, targetStock: 0, sales: 2, stock: 5, buyQty: 0 },
+            { id: 3, name: "有機棉連身衣 (熱銷)", size: "100", color: "綠", isTop10: true, targetStock: 10, sales: 2, stock: 3, buyQty: 9 }
+        ];
 
-    // 搜尋互動
-    searchEl.addEventListener('input', ()=>{
-      renderProducts(searchEl.value||'');
-    });
-
-    // 匯入區互動（拖放與選檔）
-    fileBtn.addEventListener('click', ()=>fileInput.click());
-    fileInput.addEventListener('change', ev=>handleFiles(ev.target.files));
-
-    ['dragenter','dragover'].forEach(ev=>{
-      dropZone.addEventListener(ev, e=>{ e.preventDefault(); dropZone.classList.add('bg-gray-50'); });
-    });
-    ['dragleave','drop'].forEach(ev=>{
-      dropZone.addEventListener(ev, e=>{ e.preventDefault(); dropZone.classList.remove('bg-gray-50'); });
-    });
-    dropZone.addEventListener('drop', e=>{ handleFiles(e.dataTransfer.files); });
-
-    function handleFiles(files){
-      if(!files || files.length===0) return;
-      const f = files[0];
-      importLog.textContent = `匯入中：${f.name}`;
-      const reader = new FileReader();
-      reader.onload = function(e){
-        const data = e.target.result;
-        let workbook;
-        try{
-          const arr = new Uint8Array(data);
-          workbook = XLSX.read(arr, {type:'array'});
-        }catch(err){
-          importLog.textContent = '無法解析檔案，請上傳 xlsx。';
-          return;
+        function calculateSuggest(p) {
+            if (p.isTop10) {
+                return Math.max(0, p.sales + p.targetStock - p.stock);
+            } else {
+                return Math.max(0, p.sales - p.stock);
+            }
         }
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(firstSheet, {header:1});
-        // 模擬解析：尋找含商品名稱與數量欄位或解析每列文字
-        let parsed = 0;
-        rows.forEach(r=>{
-          r.forEach(cell=>{
-            if(!cell) return;
-            const txt = String(cell);
-            // 嘗試找出品名 / 尺寸 / 顏色 / 數量
-            COLORS.forEach(color=>{
-              SIZES.forEach(size=>{
-                if(txt.includes(color) && txt.includes(size)){
-                  // 找到對應規格，增加前日銷售
-                  // 從同列搜尋數字
-                  const qty = findNumberInRow(r) || 1;
-                  const target = items.find(it=>it.color===color && it.size===size && (txt.includes(it.productName) || it.productName.includes(getShortName(txt))));
-                  if(target){ target.prevSales += qty; parsed++; }
+
+        function renderApp() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const tbody = document.getElementById('inventoryTable');
+            tbody.innerHTML = '';
+
+            const filtered = products.filter(p => 
+                p.name.toLowerCase().includes(query) || 
+                p.size.toLowerCase().includes(query) || 
+                p.color.toLowerCase().includes(query)
+            );
+
+            filtered.forEach(p => {
+                const suggest = calculateSuggest(p);
+                if (p.buyQty === undefined || p.buyQty === null) {
+                    p.buyQty = suggest;
                 }
-              });
-            });
-          });
-        });
 
-        // 若沒有解析到具體規格，嘗試根據檔名模擬加量
-        if(parsed===0){
-          const name = f.name.toLowerCase();
-          let matched = false;
-          items.forEach(it=>{
-            if(name.includes(it.sku.toLowerCase()) || name.includes(it.productName.replace(/\s+/g,'').toLowerCase())){ it.prevSales += 1; matched = true; }
-          });
-          if(!matched){
-            // 增加隨機銷量以示範
-            items[Math.floor(Math.random()*items.length)].prevSales += 1;
-          }
+                let statusBadge = '';
+                if (suggest > 0) {
+                    statusBadge = '<span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">🔵 需補進貨</span>';
+                } else {
+                    statusBadge = '<span class="px-2 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">⚪ 庫存充足</span>';
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = 'border-b border-slate-100 hover:bg-slate-50';
+                tr.innerHTML = `
+                    <td class="p-3 font-medium">${p.name}</td>
+                    <td class="p-3"><span class="bg-slate-200 px-2 py-0.5 rounded text-xs">${p.size} / ${p.color}</span></td>
+                    <td class="p-3">${p.isTop10 ? '<span class="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">TOP10</span>' : '<span class="text-xs text-slate-400">一般</span>'}</td>
+                    <td class="p-3 font-semibold">${p.sales} 件</td>
+                    <td class="p-3 font-semibold">${p.stock} 件 ${p.isTop10 ? `<span class="text-xs text-slate-400">(預備${p.targetStock})</span>` : ''}</td>
+                    <td class="p-3 font-bold text-indigo-600">${suggest} 件</td>
+                    <td class="p-3">
+                        <input type="number" min="0" value="${p.buyQty}" onchange="updateBuyQty(${p.id}, this.value)" 
+                               class="w-20 border border-slate-300 rounded px-2 py-1 text-center font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500"> 件
+                    </td>
+                    <td class="p-3">${statusBadge}</td>
+                    <td class="p-3">
+                        <button onclick="receiveStock(${p.id})" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium transition">
+                            收貨入庫
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
-        importLog.textContent = `匯入完成，解析 ${parsed} 項（模擬）`;
-        renderAll();
-      };
-      reader.readAsArrayBuffer(f);
-    }
+        function updateBuyQty(id, val) {
+            const p = products.find(item => item.id === id);
+            if (p) {
+                p.buyQty = parseInt(val) || 0;
+            }
+        }
 
-    function findNumberInRow(row){
-      for(const c of row){
-        if(!c) continue;
-        const m = String(c).match(/(\\d+)/);
-        if(m) return Number(m[1]);
-      }
-      return null;
-    }
+        function receiveStock(id) {
+            const p = products.find(item => item.id === id);
+            if (p) {
+                const addQty = p.buyQty > 0 ? p.buyQty : calculateSuggest(p);
+                if (addQty <= 0) {
+                    alert('目前無須採購或採購數量為 0！');
+                    return;
+                }
+                p.stock += addQty;
+                p.buyQty = calculateSuggest(p);
+                renderApp();
+                alert(`成功收貨 ${p.name} (${p.size}/${p.color}) +${addQty} 件！目前庫存：${p.stock} 件`);
+            }
+        }
 
-    function getShortName(txt){
-      // 嘗試從文字中抓短版商品名
-      for(const p of sampleProducts){
-        if(txt.includes(p.name)) return p.name;
-      }
-      return '';
-    }
+        // QDM Drag & Drop File Parser
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
 
-    // 初次顯示
-    renderAll();
-  </script>
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('bg-slate-100'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('bg-slate-100'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-slate-100');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+
+        function handleFileSelect(e) {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        }
+
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+                
+                if (jsonData.length > 0) {
+                    parseQDMData(jsonData);
+                } else {
+                    alert('無法讀取報表資料，請確認檔案格式是否正確！');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function parseQDMData(data) {
+            let parsedCount = 0;
+            data.forEach((row, idx) => {
+                const name = row['商品名稱'] || row['Product Name'] || row['商品'] || `QDM匯入商品-${idx+1}`;
+                const spec = row['規格'] || row['尺寸'] || row['Option'] || '';
+                const qty = parseInt(row['數量'] || row['購買數量'] || row['Qty'] || 1);
+
+                let size = "80";
+                let color = "白";
+                if (spec.includes("73")) size = "73";
+                if (spec.includes("80")) size = "80";
+                if (spec.includes("90")) size = "90";
+                if (spec.includes("100")) size = "100";
+                if (spec.includes("粉")) color = "粉";
+                if (spec.includes("黃")) color = "黃";
+                if (spec.includes("綠")) color = "綠";
+
+                const existing = products.find(p => p.name === name && p.size === size && p.color === color);
+                if (existing) {
+                    existing.sales += qty;
+                    existing.buyQty = calculateSuggest(existing);
+                } else {
+                    const newProd = {
+                        id: products.length + 1,
+                        name: name,
+                        size: size,
+                        color: color,
+                        isTop10: false,
+                        targetStock: 0,
+                        sales: qty,
+                        stock: 0,
+                        buyQty: qty
+                    };
+                    products.push(newProd);
+                }
+                parsedCount++;
+            });
+
+            renderApp();
+            alert(`成功解析 QDM 報表！已更新 ${parsedCount} 筆資料！`);
+        }
+
+        // Initial Render
+        renderApp();
+    </script>
 </body>
 </html>
