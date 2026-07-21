@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V1.7 (紅燈補貨警示)</title>
+    <title>日光手感 ERP - V1.9 (狀態標示精簡版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.7</span></h1>
-                <p class="text-sm text-slate-500 mt-1">需補庫存顯眼紅燈警示 + QDM庫存 ≤ 30 歸零計算 + ALL置頂排序</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.9</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 需補 / 🟢 充足 精簡標示 + 紅燈優先排序</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
@@ -66,7 +66,7 @@
             <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入</h2>
             <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition cursor-pointer">
                 <p class="text-slate-600 font-medium">拖拽 QDM 報表 (product_purchased_export.xlsx) 至此處</p>
-                <p class="text-xs text-slate-400 mt-1">QDM 庫存 ≤ 30 自動判定為 0 件真實庫存，需補進貨商品自動標示為紅燈</p>
+                <p class="text-xs text-slate-400 mt-1">🔴 需補商品優先排前，各商品預設不展開，可手動點擊展開細項</p>
                 <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
             </div>
         </section>
@@ -76,7 +76,7 @@
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <div>
                     <h2 class="text-lg font-bold text-slate-800">📋 商品採購清單 (點擊 ▶ 可展開看顏色/尺寸細項)</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">預設依商品代號 (BA, BG, F...) 排序，第一列為 ALL 全站總計</p>
+                    <p class="text-xs text-slate-500 mt-0.5">預設依🔴 需補優先，再依字母順序排序</p>
                 </div>
                 <button onclick="exportPurchaseReport()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg text-sm shadow-sm transition flex items-center gap-1">
                     📥 匯出每日採購報表 (Excel)
@@ -138,6 +138,11 @@
             }
         }
 
+        // 只要實際採購量或建議採購量 > 0，或是真實庫存 < 0，皆視為需要補貨 (🔴 需補)
+        function isNeedBuy(g) {
+            return g.totalBuyQty > 0 || g.totalSuggestQty > 0 || g.totalRealStock < 0;
+        }
+
         function toggleExpand(code) {
             if (expandedRows.has(code)) {
                 expandedRows.delete(code);
@@ -157,9 +162,17 @@
                 return;
             }
 
+            // 排序：1. ALL置頂  2. 🔴 需補優先  3. 依字母順序
             let sortedGroups = [...productsGrouped].sort((a, b) => {
                 if (a.code === 'ALL') return -1;
                 if (b.code === 'ALL') return 1;
+
+                const aRed = isNeedBuy(a);
+                const bRed = isNeedBuy(b);
+
+                if (aRed && !bRed) return -1;
+                if (!aRed && bRed) return 1;
+
                 return a.code.localeCompare(b.code, 'en', { numeric: true });
             });
 
@@ -177,7 +190,7 @@
             sortedGroups.forEach(g => {
                 if (g.code !== 'ALL') {
                     totalStock += g.totalRealStock;
-                    if (g.totalBuyQty > 0) {
+                    if (isNeedBuy(g)) {
                         needBuyItemsCount++;
                         needBuyQtyCount += g.totalBuyQty;
                     }
@@ -212,14 +225,12 @@
                        </button>`
                     : '';
 
-                // 修改點：需補貨使用顯眼紅燈樣式
+                // 修改點：精簡狀態顯示為 🔴 需補 與 🟢 充足
                 let statusBadge = '';
-                if (group.totalRealStock < 0) {
-                    statusBadge = `<span class="px-2.5 py-1 bg-rose-200 text-rose-900 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span> 缺 ${Math.abs(group.totalRealStock)} 件</span>`;
-                } else if (group.totalBuyQty > 0) {
-                    statusBadge = '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 需補進貨</span>';
+                if (isNeedBuy(group)) {
+                    statusBadge = '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 🔴 需補</span>';
                 } else {
-                    statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-medium flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 庫存充足</span>';
+                    statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-xs font-medium flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 🟢 充足</span>';
                 }
 
                 tr.innerHTML = `
@@ -253,12 +264,10 @@
                         const displayBuy = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
 
                         let childStatus = '';
-                        if (v.realStock < 0) {
-                            childStatus = `<span class="text-rose-600 font-bold">缺 ${Math.abs(v.realStock)}</span>`;
-                        } else if (displayBuy > 0) {
-                            childStatus = `<span class="text-rose-600 font-bold">🔴 需補貨</span>`;
+                        if (displayBuy > 0 || sug > 0 || v.realStock < 0) {
+                            childStatus = `<span class="text-rose-600 font-bold">🔴 需補</span>`;
                         } else {
-                            childStatus = `<span class="text-emerald-600">🟢 充足</span>`;
+                            childStatus = `<span class="text-emerald-600 font-medium">🟢 充足</span>`;
                         }
 
                         childTr.innerHTML = `
@@ -403,12 +412,8 @@
             productsGrouped = Object.values(groupsMap);
             productsGrouped.forEach(g => recalculateGroup(g));
 
+            // 預設全部收合
             expandedRows.clear();
-            productsGrouped.forEach(g => {
-                if (g.totalSales > 0 || g.totalRealStock < 0) {
-                    expandedRows.add(g.code);
-                }
-            });
 
             renderApp();
             alert(`✅ 成功匯入 QDM 報表！已解析 ${productsGrouped.length} 款主商品及子規格。`);
