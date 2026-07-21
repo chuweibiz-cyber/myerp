@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V2.5 (建議/實際採購量欄位對調)</title>
+    <title>日光手感 ERP - V2.5 (強制 Excel 欄位順序)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -492,9 +492,18 @@
             reader.readAsArrayBuffer(file);
         }
 
-        // 修改點：對調「建議採購量」與「實際採購量」的欄位順序
+        // 強制指定 Excel 欄位名稱與順序
         function exportPurchaseReport() {
             const purchaseRows = [];
+            const headerOrder = [
+                '商品名稱',
+                '款式/顏色/尺寸',
+                'QDM庫存',
+                '實際庫存',
+                '前日銷量',
+                '建議採購量',
+                '實際採購量'
+            ];
             
             productsGrouped.forEach(g => {
                 if (g.code === 'ALL') return;
@@ -539,7 +548,8 @@
                 return;
             }
 
-            const worksheet = XLSX.utils.json_to_sheet(purchaseRows);
+            // 使用 { header: headerOrder } 強制鎖定欄位順序
+            const worksheet = XLSX.utils.json_to_sheet(purchaseRows, { header: headerOrder });
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "每日採購單");
 
