@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V2.0 (三色燈號 + 附件格式報表)</title>
+    <title>日光手感 ERP - V2.2 (不讀取 SKU)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.0</span></h1>
-                <p class="text-sm text-slate-500 mt-1">🔴 紅燈/🟢 綠燈/🟠 橘燈(QDM≤5) + 附件對齊採購報表格式</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V2.2</span></h1>
+                <p class="text-sm text-slate-500 mt-1">🔴 🟢 🟠 純燈號標示 + 移除 SKU 資料抓取</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
@@ -66,7 +66,7 @@
             <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入</h2>
             <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition cursor-pointer">
                 <p class="text-slate-600 font-medium">拖拽 QDM 報表 (product_purchased_export.xlsx) 至此處</p>
-                <p class="text-xs text-slate-400 mt-1">🔴 紅燈/🟠 橘燈(QDM≤5) 商品優先排前，預設全收合，點擊可展開細項</p>
+                <p class="text-xs text-slate-400 mt-1">🔴 / 🟠 (QDM≤5) 商品優先排前，預設全收合，點擊可展開細項</p>
                 <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
             </div>
         </section>
@@ -89,13 +89,13 @@
                         <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
                             <th class="p-3 w-10"></th>
                             <th class="p-3">商品代碼</th>
-                            <th class="p-3">SKU / 規格型號</th>
+                            <th class="p-3">規格型號</th>
                             <th class="p-3">QDM庫存</th>
                             <th class="p-3 bg-amber-50 text-amber-900">真實庫存</th>
                             <th class="p-3">前日銷量</th>
                             <th class="p-3 text-indigo-700">建議採購</th>
                             <th class="p-3 text-indigo-700">實際採購量</th>
-                            <th class="p-3">狀態</th>
+                            <th class="p-3 text-center">狀態</th>
                             <th class="p-3">操作</th>
                         </tr>
                     </thead>
@@ -125,6 +125,20 @@
             return fullName.substring(0, 8).toUpperCase();
         }
 
+        // 清理規格字串
+        function cleanSpecText(specStr) {
+            if (!specStr) return '';
+            return specStr
+                .replace(/親子裝尺寸[:：\s]*/g, '')
+                .replace(/親子裝款式[:：\s]*/g, '')
+                .replace(/親子裝顏色[:：\s]*/g, '')
+                .replace(/尺寸[:：\s]*/g, '')
+                .replace(/款式[:：\s]*/g, '')
+                .replace(/顏色[:：\s]*/g, '')
+                .replace(/^[-_\s]+|[-_\s]+$/g, '')
+                .trim();
+        }
+
         function calcRealStock(qdmStock) {
             if (qdmStock <= VIRTUAL_OFFSET) return 0;
             return qdmStock - VIRTUAL_OFFSET;
@@ -138,7 +152,6 @@
             }
         }
 
-        // 判斷單一變體狀態：'orange' | 'red' | 'green'
         function getVariantStatus(v) {
             if (v.qdmStock <= 5) return 'orange';
             const sug = calculateSuggest(v.realStock, v.sales);
@@ -147,7 +160,6 @@
             return 'green';
         }
 
-        // 判斷主商品狀態
         function getGroupStatus(g) {
             const hasOrange = g.variants.some(v => getVariantStatus(v) === 'orange');
             if (hasOrange) return 'orange';
@@ -177,7 +189,6 @@
                 return;
             }
 
-            // 排序：1. ALL置頂  2. 紅/橘燈優先  3. 依字母順序
             let sortedGroups = [...productsGrouped].sort((a, b) => {
                 if (a.code === 'ALL') return -1;
                 if (b.code === 'ALL') return 1;
@@ -222,10 +233,7 @@
 
             const filteredGroups = sortedGroups.filter(g => {
                 if (g.code.toLowerCase().includes(query)) return true;
-                return g.variants.some(v => 
-                    v.spec.toLowerCase().includes(query) || 
-                    v.sku.toLowerCase().includes(query)
-                );
+                return g.variants.some(v => v.spec.toLowerCase().includes(query));
             });
 
             filteredGroups.forEach(group => {
@@ -244,15 +252,14 @@
                        </button>`
                     : '';
 
-                // 三色燈號渲染
                 const gStatus = getGroupStatus(group);
                 let statusBadge = '';
                 if (gStatus === 'orange') {
-                    statusBadge = '<span class="px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-amber-500"></span> 🟠 橘燈 (QDM≤5)</span>';
+                    statusBadge = '<span class="text-lg">🟠</span>';
                 } else if (gStatus === 'red') {
-                    statusBadge = '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 🔴 紅燈</span>';
+                    statusBadge = '<span class="text-lg">🔴</span>';
                 } else {
-                    statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-xs font-medium flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 🟢 綠燈</span>';
+                    statusBadge = '<span class="text-lg">🟢</span>';
                 }
 
                 tr.innerHTML = `
@@ -266,7 +273,7 @@
                     <td class="p-3 text-slate-900 font-bold">${group.totalSales} 件</td>
                     <td class="p-3 text-indigo-600 font-bold">${group.totalSuggestQty} 件</td>
                     <td class="p-3 font-bold text-rose-600">${group.totalBuyQty} 件</td>
-                    <td class="p-3">${statusBadge}</td>
+                    <td class="p-3 text-center">${statusBadge}</td>
                     <td class="p-3">
                         ${hasChildren && !isALL ? `
                             <button onclick="toggleExpand('${group.code}')" class="text-xs text-indigo-600 hover:underline">
@@ -288,20 +295,17 @@
                         const vSt = getVariantStatus(v);
                         let childStatus = '';
                         if (vSt === 'orange') {
-                            childStatus = `<span class="text-amber-600 font-bold">🟠 橘燈</span>`;
+                            childStatus = `<span class="text-base">🟠</span>`;
                         } else if (vSt === 'red') {
-                            childStatus = `<span class="text-rose-600 font-bold">🔴 紅燈</span>`;
+                            childStatus = `<span class="text-base">🔴</span>`;
                         } else {
-                            childStatus = `<span class="text-emerald-600 font-medium">🟢 綠燈</span>`;
+                            childStatus = `<span class="text-base">🟢</span>`;
                         }
 
                         childTr.innerHTML = `
                             <td></td>
                             <td class="p-2 text-right text-slate-400 font-mono">└</td>
-                            <td class="p-2">
-                                <div class="font-bold text-slate-700">${v.spec || '預設規格'}</div>
-                                <div class="text-[10px] font-mono text-slate-400">${v.sku || '無SKU'}</div>
-                            </td>
+                            <td class="p-2 font-bold text-slate-700">${v.spec || '預設規格'}</td>
                             <td class="p-2 text-slate-400 font-mono">${v.qdmStock} 件</td>
                             <td class="p-2 bg-amber-50/80">
                                 <input type="number" value="${v.realStock}" onchange="updateChildStock('${group.code}', ${vIdx}, this.value)"
@@ -313,7 +317,7 @@
                                 <input type="number" min="0" value="${displayBuy}" onchange="updateChildBuyQty('${group.code}', ${vIdx}, this.value)"
                                        class="w-16 border border-slate-300 rounded px-1 py-0.5 text-center font-bold text-rose-600 bg-white"> 件
                             </td>
-                            <td class="p-2 font-medium">${childStatus}</td>
+                            <td class="p-2 text-center">${childStatus}</td>
                             <td class="p-2">
                                 <button onclick="receiveChildStock('${group.code}', ${vIdx})" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px]">
                                     入庫
@@ -381,6 +385,7 @@
             group.totalBuyQty = buySum;
         }
 
+        // 解析 QDM 報表：不抓取 SKU 欄位
         function parseQDMData(data) {
             const groupsMap = {};
             let currentParentName = "";
@@ -405,16 +410,14 @@
                     }
                 }
 
-                if (row['型號'] || row['SKU'] || (row['庫存'] !== undefined && !row['商品名稱'])) {
+                if (row['型號'] || (row['庫存'] !== undefined && !row['商品名稱'])) {
                     const spec = row['型號'] || '預設規格';
-                    const sku = row['SKU'] || '';
                     const rawQdmStock = parseInt(row['庫存']) || 0;
                     const sales = parseInt(row['數量']) || 0;
                     const realStock = calcRealStock(rawQdmStock);
 
                     const variantObj = {
                         spec: spec,
-                        sku: sku,
                         qdmStock: rawQdmStock,
                         realStock: realStock,
                         sales: sales,
@@ -437,9 +440,7 @@
             productsGrouped = Object.values(groupsMap);
             productsGrouped.forEach(g => recalculateGroup(g));
 
-            // 預設全部收合
             expandedRows.clear();
-
             renderApp();
             alert(`✅ 成功匯入 QDM 報表！已解析 ${productsGrouped.length} 款主商品及子規格。`);
         }
@@ -477,14 +478,12 @@
             reader.readAsArrayBuffer(file);
         }
 
-        // 修改點：完全對齊附件報表欄位格式與主/子列層級結構
         function exportPurchaseReport() {
             const purchaseRows = [];
             
             productsGrouped.forEach(g => {
                 if (g.code === 'ALL') return;
 
-                // 篩選有採購需求的子規格
                 const needVariants = g.variants.filter(v => {
                     const sug = calculateSuggest(v.realStock, v.sales);
                     const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
@@ -492,7 +491,6 @@
                 });
 
                 if (needVariants.length > 0) {
-                    // 1. 寫入主商品標題列 (僅商品名稱有值)
                     purchaseRows.push({
                         '商品名稱': g.fullName,
                         '尺寸/款式/顏色': '',
@@ -503,14 +501,14 @@
                         '建議採購量': ''
                     });
 
-                    // 2. 寫入各個子規格細項列
                     needVariants.forEach(v => {
                         const sug = calculateSuggest(v.realStock, v.sales);
                         const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
-                        
+                        const cleanedSpec = cleanSpecText(v.spec);
+
                         purchaseRows.push({
                             '商品名稱': '',
-                            '尺寸/款式/顏色': v.spec,
+                            '尺寸/款式/顏色': cleanedSpec,
                             'QDM庫存': v.qdmStock,
                             '實際庫存': v.realStock > 0 ? v.realStock : '',
                             '前日銷量': v.sales,
