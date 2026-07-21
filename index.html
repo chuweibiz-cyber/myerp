@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日光手感 ERP - V1.5 (樹狀子規格與ALL置頂)</title>
+    <title>日光手感 ERP - V1.7 (紅燈補貨警示)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -18,8 +18,8 @@
         <!-- Header -->
         <header class="flex flex-col md:flex-row md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
             <div>
-                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.5</span></h1>
-                <p class="text-sm text-slate-500 mt-1">支援主商品下拉展開子規格 (尺寸/顏色/款式) + ALL置頂 + 代號排序</p>
+                <h1 class="text-2xl font-bold text-slate-900">日光手感 ERP <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded ml-2">V1.7</span></h1>
+                <p class="text-sm text-slate-500 mt-1">需補庫存顯眼紅燈警示 + QDM庫存 ≤ 30 歸零計算 + ALL置頂排序</p>
             </div>
             <div class="w-full md:w-96">
                 <input type="text" id="searchInput" oninput="renderApp()" placeholder="🔍 搜尋代碼 (如 F037, BA093) 或規格..." 
@@ -40,7 +40,7 @@
                 </div>
                 <div class="border-l border-slate-700 pl-6">
                     <p class="text-xs text-slate-400">全店建議採購量</p>
-                    <p id="allTotalBuyQty" class="text-2xl font-bold text-indigo-300">0 件</p>
+                    <p id="allTotalBuyQty" class="text-2xl font-bold text-rose-400">0 件</p>
                 </div>
             </div>
         </section>
@@ -53,11 +53,11 @@
             </div>
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                 <p class="text-xs font-semibold text-slate-400">需補貨款數</p>
-                <p id="totalNeedBuyItems" class="text-2xl font-bold text-indigo-600 mt-1">0 款</p>
+                <p id="totalNeedBuyItems" class="text-2xl font-bold text-rose-600 mt-1">0 款</p>
             </div>
             <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
                 <p class="text-xs font-semibold text-slate-400">今日建議採購總件數</p>
-                <p id="totalNeedBuyQty" class="text-2xl font-bold text-indigo-600 mt-1">0 件</p>
+                <p id="totalNeedBuyQty" class="text-2xl font-bold text-rose-600 mt-1">0 件</p>
             </div>
         </section>
 
@@ -66,7 +66,7 @@
             <h2 class="text-lg font-bold text-slate-800 mb-3">📥 QDM 報表匯入</h2>
             <div id="dropZone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center hover:bg-slate-50 transition cursor-pointer">
                 <p class="text-slate-600 font-medium">拖拽 QDM 報表 (product_purchased_export.xlsx) 至此處</p>
-                <p class="text-xs text-slate-400 mt-1">系統將自動解析子規格 (尺寸/顏色/款式)，並扣除 30 虛擬庫存</p>
+                <p class="text-xs text-slate-400 mt-1">QDM 庫存 ≤ 30 自動判定為 0 件真實庫存，需補進貨商品自動標示為紅燈</p>
                 <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv" onchange="handleFileSelect(event)">
             </div>
         </section>
@@ -90,7 +90,7 @@
                             <th class="p-3 w-10"></th>
                             <th class="p-3">商品代碼</th>
                             <th class="p-3">SKU / 規格型號</th>
-                            <th class="p-3">QDM 原始庫存</th>
+                            <th class="p-3">QDM庫存</th>
                             <th class="p-3 bg-amber-50 text-amber-900">真實庫存</th>
                             <th class="p-3">前日銷量</th>
                             <th class="p-3 text-indigo-700">建議採購</th>
@@ -108,8 +108,8 @@
     </div>
 
     <script>
-        let productsGrouped = []; // 樹狀商品資料
-        let expandedRows = new Set(); // 記錄哪些商品展開中
+        let productsGrouped = [];
+        let expandedRows = new Set();
         const VIRTUAL_OFFSET = 30;
 
         function extractCode(fullName) {
@@ -125,12 +125,16 @@
             return fullName.substring(0, 8).toUpperCase();
         }
 
+        function calcRealStock(qdmStock) {
+            if (qdmStock <= VIRTUAL_OFFSET) return 0;
+            return qdmStock - VIRTUAL_OFFSET;
+        }
+
         function calculateSuggest(realStock, sales) {
-            const deficit = realStock < 0 ? Math.abs(realStock) : 0;
-            if (realStock >= 0) {
-                return Math.max(0, sales - realStock);
+            if (realStock >= sales) {
+                return 0;
             } else {
-                return sales + deficit;
+                return sales - realStock;
             }
         }
 
@@ -153,14 +157,12 @@
                 return;
             }
 
-            // 1. 先處理排序：ALL 放第一位，其餘依代碼 (BA, BG, F...) 自然排序
             let sortedGroups = [...productsGrouped].sort((a, b) => {
                 if (a.code === 'ALL') return -1;
                 if (b.code === 'ALL') return 1;
                 return a.code.localeCompare(b.code, 'en', { numeric: true });
             });
 
-            // 更新 ALL 全站頂部卡片
             const allGroup = sortedGroups.find(g => g.code === 'ALL');
             if (allGroup) {
                 document.getElementById('allSummaryText').innerText = `全站共有 ${allGroup.variants.length || 0} 項商品變體規格`;
@@ -168,7 +170,6 @@
                 document.getElementById('allTotalBuyQty').innerText = `${allGroup.totalBuyQty} 件`;
             }
 
-            // 全局統計計算
             let totalStock = 0;
             let needBuyItemsCount = 0;
             let needBuyQtyCount = 0;
@@ -187,7 +188,6 @@
             document.getElementById('totalNeedBuyItems').innerText = `${needBuyItemsCount.toLocaleString()} 款`;
             document.getElementById('totalNeedBuyQty').innerText = `${needBuyQtyCount.toLocaleString()} 件`;
 
-            // 搜尋過濾
             const filteredGroups = sortedGroups.filter(g => {
                 if (g.code.toLowerCase().includes(query)) return true;
                 return g.variants.some(v => 
@@ -201,7 +201,6 @@
                 const hasChildren = group.variants.length > 0;
                 const isALL = group.code === 'ALL';
 
-                // 主商品列 TR
                 const tr = document.createElement('tr');
                 tr.className = isALL 
                     ? 'bg-amber-100/60 font-bold border-b-2 border-amber-300' 
@@ -213,13 +212,14 @@
                        </button>`
                     : '';
 
+                // 修改點：需補貨使用顯眼紅燈樣式
                 let statusBadge = '';
                 if (group.totalRealStock < 0) {
-                    statusBadge = `<span class="px-2 py-1 bg-rose-100 text-rose-800 rounded-full text-xs font-bold">缺 ${Math.abs(group.totalRealStock)} 件</span>`;
+                    statusBadge = `<span class="px-2.5 py-1 bg-rose-200 text-rose-900 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span> 缺 ${Math.abs(group.totalRealStock)} 件</span>`;
                 } else if (group.totalBuyQty > 0) {
-                    statusBadge = '<span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">需補進貨</span>';
+                    statusBadge = '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 border border-rose-300 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-rose-500"></span> 需補進貨</span>';
                 } else {
-                    statusBadge = '<span class="px-2 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">庫存充足</span>';
+                    statusBadge = '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-medium flex items-center gap-1 w-fit"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> 庫存充足</span>';
                 }
 
                 tr.innerHTML = `
@@ -232,7 +232,7 @@
                     <td class="p-3 text-amber-900 font-bold bg-amber-50/40">${group.totalRealStock} 件</td>
                     <td class="p-3 text-slate-900 font-bold">${group.totalSales} 件</td>
                     <td class="p-3 text-indigo-600 font-bold">${group.totalSuggestQty} 件</td>
-                    <td class="p-3 font-bold text-indigo-700">${group.totalBuyQty} 件</td>
+                    <td class="p-3 font-bold text-rose-600">${group.totalBuyQty} 件</td>
                     <td class="p-3">${statusBadge}</td>
                     <td class="p-3">
                         ${hasChildren && !isALL ? `
@@ -244,7 +244,6 @@
                 `;
                 tbody.appendChild(tr);
 
-                // 若展開，渲染子規格列
                 if (isExpanded && hasChildren && !isALL) {
                     group.variants.forEach((v, vIdx) => {
                         const childTr = document.createElement('tr');
@@ -252,6 +251,15 @@
                         
                         const sug = calculateSuggest(v.realStock, v.sales);
                         const displayBuy = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
+
+                        let childStatus = '';
+                        if (v.realStock < 0) {
+                            childStatus = `<span class="text-rose-600 font-bold">缺 ${Math.abs(v.realStock)}</span>`;
+                        } else if (displayBuy > 0) {
+                            childStatus = `<span class="text-rose-600 font-bold">🔴 需補貨</span>`;
+                        } else {
+                            childStatus = `<span class="text-emerald-600">🟢 充足</span>`;
+                        }
 
                         childTr.innerHTML = `
                             <td></td>
@@ -269,9 +277,9 @@
                             <td class="p-2 font-bold text-indigo-600">${sug} 件</td>
                             <td class="p-2">
                                 <input type="number" min="0" value="${displayBuy}" onchange="updateChildBuyQty('${group.code}', ${vIdx}, this.value)"
-                                       class="w-16 border border-slate-300 rounded px-1 py-0.5 text-center font-bold text-slate-800 bg-white"> 件
+                                       class="w-16 border border-slate-300 rounded px-1 py-0.5 text-center font-bold text-rose-600 bg-white"> 件
                             </td>
-                            <td class="p-2 text-slate-400">${v.realStock < 0 ? `缺 ${Math.abs(v.realStock)}` : '正常'}</td>
+                            <td class="p-2 font-medium">${childStatus}</td>
                             <td class="p-2">
                                 <button onclick="receiveChildStock('${group.code}', ${vIdx})" class="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px]">
                                     入庫
@@ -284,7 +292,6 @@
             });
         }
 
-        // 修改子規格真實庫存
         function updateChildStock(code, vIdx, val) {
             const group = productsGrouped.find(g => g.code === code);
             if (group && group.variants[vIdx]) {
@@ -296,7 +303,6 @@
             }
         }
 
-        // 修改子規格採購量
         function updateChildBuyQty(code, vIdx, val) {
             const group = productsGrouped.find(g => g.code === code);
             if (group && group.variants[vIdx]) {
@@ -306,7 +312,6 @@
             }
         }
 
-        // 單一子規格快速入庫
         function receiveChildStock(code, vIdx) {
             const group = productsGrouped.find(g => g.code === code);
             if (group && group.variants[vIdx]) {
@@ -325,7 +330,6 @@
             }
         }
 
-        // 重新彙整父商品的總合數據
         function recalculateGroup(group) {
             let qdmSum = 0, realSum = 0, salesSum = 0, sugSum = 0, buySum = 0;
             group.variants.forEach(v => {
@@ -343,14 +347,12 @@
             group.totalBuyQty = buySum;
         }
 
-        // 解析 QDM Excel 報表 (關鍵：依商品名稱進行樹狀父子分組)
         function parseQDMData(data) {
             const groupsMap = {};
             let currentParentName = "";
             let currentCode = "";
 
             data.forEach((row) => {
-                // 如果這一列包含商品名稱（代表進入主商品列）
                 if (row['商品名稱']) {
                     currentParentName = row['商品名稱'];
                     currentCode = extractCode(currentParentName);
@@ -369,13 +371,12 @@
                     }
                 }
 
-                // 如果包含型號、SKU 或庫存資料（代表規格列）
                 if (row['型號'] || row['SKU'] || (row['庫存'] !== undefined && !row['商品名稱'])) {
                     const spec = row['型號'] || '預設規格';
                     const sku = row['SKU'] || '';
                     const rawQdmStock = parseInt(row['庫存']) || 0;
                     const sales = parseInt(row['數量']) || 0;
-                    const realStock = rawQdmStock - VIRTUAL_OFFSET;
+                    const realStock = calcRealStock(rawQdmStock);
 
                     const variantObj = {
                         spec: spec,
@@ -387,7 +388,6 @@
                     };
 
                     if (!groupsMap[currentCode]) {
-                        // 防止無主商品標題的情況
                         currentCode = 'ALL';
                         groupsMap[currentCode] = {
                             code: 'ALL',
@@ -400,11 +400,9 @@
                 }
             });
 
-            // 計算各 Group 的總合
             productsGrouped = Object.values(groupsMap);
             productsGrouped.forEach(g => recalculateGroup(g));
 
-            // 預設將包含缺貨或銷量的品項設為展開狀態，方便盤點
             expandedRows.clear();
             productsGrouped.forEach(g => {
                 if (g.totalSales > 0 || g.totalRealStock < 0) {
@@ -416,7 +414,6 @@
             alert(`✅ 成功匯入 QDM 報表！已解析 ${productsGrouped.length} 款主商品及子規格。`);
         }
 
-        // QDM Excel 文件讀取
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
 
@@ -454,7 +451,7 @@
             const purchaseRows = [];
             
             productsGrouped.forEach(g => {
-                if (g.code === 'ALL') return; // 不匯出 ALL 列
+                if (g.code === 'ALL') return;
                 g.variants.forEach(v => {
                     const sug = calculateSuggest(v.realStock, v.sales);
                     const actual = (v.buyQty !== undefined && v.buyQty !== null) ? v.buyQty : sug;
@@ -464,7 +461,7 @@
                             '完整商品名稱': g.fullName,
                             '規格(顏色/尺寸)': v.spec,
                             'SKU': v.sku,
-                            'QDM顯示庫存': v.qdmStock,
+                            'QDM庫存': v.qdmStock,
                             '真實庫存': v.realStock,
                             '前日銷量': v.sales,
                             '建議採購量': sug,
